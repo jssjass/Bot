@@ -1,173 +1,206 @@
 class RegistrationState:
-    """Состояния автомата для регистрации на рейс и взаимодействия с меню"""
-    MAIN_MENU = "main_menu"
-    REGISTER_FLIGHT_START = "register_flight_start"
-    ASK_NAME = "ask_name"
-    ASK_FLIGHT_NUMBER = "ask_flight_number"
-    CONFIRMATION = "confirmation"
-    VIEW_REGISTRATIONS = "view_registrations"
-    CANCEL_REGISTRATION_START = "cancel_registration_start"
-    CANCEL_CONFIRMATION = "cancel_confirmation"
-    END = "end"
+    """Абстрактное состояние чат-бота"""
+    def handle(self, bot, message):
+        """Обрабатывает сообщение и возвращает следующее состояние"""
+        raise NotImplementedError("Метод handle() должен быть переопределен в подклассе")
+
+
+class MainMenuState(RegistrationState):
+    """Состояние главного меню"""
+    def handle(self, bot, message):
+        if not message.strip():
+            # Пустое сообщение: показать главное меню
+            return self.show_menu()
+        else:
+            # Обработка выбора пользователя
+            option = message.strip()
+            return self.process_option(bot, option)
+
+    def show_menu(self):
+        response = (
+            "Главное меню:\n"
+            "1. Зарегистрироваться на рейс\n"
+            "2. Просмотреть регистрации\n"
+            "3. Отменить регистрацию\n"
+            "4. Выйти\n"
+            "Выберите опцию (1-4):"
+        )
+        return response, self
+
+    def process_option(self, bot, option):
+        if option == "1":
+            response = "Введите имя пассажира:"
+            return response, AskNameState()
+        elif option == "2":
+            if bot.registrations:
+                registration_list = "\n".join(
+                    [f"{name}: Рейс {flight}" for name, flight in bot.registrations.items()]
+                )
+                response = f"Текущие регистрации:\n{registration_list}"
+            else:
+                response = "Нет существующих регистраций."
+            response += (
+                "\n\nГлавное меню:\n"
+                "1. Зарегистрироваться на рейс\n"
+                "2. Просмотреть регистрации\n"
+                "3. Отменить регистрацию\n"
+                "4. Выйти\n"
+                "Выберите опцию (1-4):"
+            )
+            return response, self
+        elif option == "3":
+            response = "Введите имя пассажира для отмены регистрации:"
+            return response, CancelRegistrationStartState()
+        elif option == "4":
+            response = "Завершение работы."
+            return response, EndState()
+        else:
+            response = "Неверный ввод. Пожалуйста, выберите опцию от 1 до 4."
+            return response, self
+
+
+class AskNameState(RegistrationState):
+    """Состояние запроса имени пассажира"""
+    def handle(self, bot, message):
+        name = message.strip()
+        if name:
+            bot.current_name = name
+            response = f"Укажите номер рейса для пассажира {name}:"
+            return response, AskFlightNumberState()
+        else:
+            response = "Имя не может быть пустым. Пожалуйста, введите корректное имя пассажира:"
+            return response, self
+
+
+class AskFlightNumberState(RegistrationState):
+    """Состояние запроса номера рейса"""
+    def handle(self, bot, message):
+        flight_number = message.strip()
+        if flight_number:
+            bot.current_flight = flight_number
+            response = (
+                f"Подтвердите регистрацию на рейс {flight_number} на имя пассажира {bot.current_name}? (да/нет)"
+            )
+            return response, ConfirmationState()
+        else:
+            response = f"Номер рейса не может быть пустым. Укажите номер рейса для пассажира {bot.current_name}:"
+            return response, self
+
+
+class ConfirmationState(RegistrationState):
+    """Состояние подтверждения регистрации"""
+    def handle(self, bot, message):
+        answer = message.strip().lower()
+        if answer == "да":
+            bot.registrations[bot.current_name] = bot.current_flight
+            response = (
+                "Регистрация успешно завершена!\n\nГлавное меню:\n"
+                "1. Зарегистрироваться на рейс\n"
+                "2. Просмотреть регистрации\n"
+                "3. Отменить регистрацию\n"
+                "4. Выйти\n"
+                "Выберите опцию (1-4):"
+            )
+            return response, MainMenuState()
+        elif answer == "нет":
+            response = (
+                "Регистрация отменена.\n\nГлавное меню:\n"
+                "1. Зарегистрироваться на рейс\n"
+                "2. Просмотреть регистрации\n"
+                "3. Отменить регистрацию\n"
+                "4. Выйти\n"
+                "Выберите опцию (1-4):"
+            )
+            return response, MainMenuState()
+        else:
+            response = "Пожалуйста, ответьте 'да' или 'нет':"
+            return response, self
+
+
+class CancelRegistrationStartState(RegistrationState):
+    """Состояние запроса имени пассажира для отмены регистрации"""
+    def handle(self, bot, message):
+        name = message.strip()
+        if name in bot.registrations:
+            bot.current_name = name
+            response = f"Вы уверены, что хотите отменить регистрацию для {name}? (да/нет)"
+            return response, CancelConfirmationState()
+        else:
+            response = (
+                "Пассажир с таким именем не найден.\n\nГлавное меню:\n"
+                "1. Зарегистрироваться на рейс\n"
+                "2. Просмотреть регистрации\n"
+                "3. Отменить регистрацию\n"
+                "4. Выйти\n"
+                "Выберите опцию (1-4):"
+            )
+            return response, MainMenuState()
+
+
+class CancelConfirmationState(RegistrationState):
+    """Состояние подтверждения отмены регистрации"""
+    def handle(self, bot, message):
+        answer = message.strip().lower()
+        if answer == "да":
+            del bot.registrations[bot.current_name]
+            response = (
+                "Регистрация успешно отменена.\n\nГлавное меню:\n"
+                "1. Зарегистрироваться на рейс\n"
+                "2. Просмотреть регистрации\n"
+                "3. Отменить регистрацию\n"
+                "4. Выйти\n"
+                "Выберите опцию (1-4):"
+            )
+            return response, MainMenuState()
+        elif answer == "нет":
+            response = (
+                "Отмена не выполнена.\n\nГлавное меню:\n"
+                "1. Зарегистрироваться на рейс\n"
+                "2. Просмотреть регистрации\n"
+                "3. Отменить регистрацию\n"
+                "4. Выйти\n"
+                "Выберите опцию (1-4):"
+            )
+            return response, MainMenuState()
+        else:
+            response = "Пожалуйста, ответьте 'да' или 'нет':"
+            return response, self
+
+
+class EndState(RegistrationState):
+    """Состояние завершения работы бота"""
+    def handle(self, bot, message):
+        return "Чат-бот завершил работу.", self
+
 
 class RegistrationBot:
-    """Расширенный чат-бот для регистрации на авиарейс с поддержкой меню"""
+    """Чат-бот для регистрации на авиарейс с использованием FSM"""
 
     def __init__(self):
-        self.state = RegistrationState.MAIN_MENU
+        self.state = MainMenuState()
         self.registrations = {}  # Хранение регистраций в виде {имя: номер рейса}
         self.current_name = ""
         self.current_flight = ""
 
     def process_message(self, message):
-        """Обрабатывает сообщение пользователя и генерирует ответ в зависимости от состояния"""
+        """Обрабатывает сообщение пользователя и обновляет состояние"""
+        response, next_state = self.state.handle(self, message)
+        self.state = next_state
+        return response
 
-        if self.state == RegistrationState.MAIN_MENU:
-            if not message.strip():
-                # Если сообщение пустое, просто вывести главное меню
-                response = (
-                    "Главное меню:\n"
-                    "1. Зарегистрироваться на рейс\n"
-                    "2. Просмотреть регистрации\n"
-                    "3. Отменить регистрацию\n"
-                    "4. Выйти\n"
-                    "Выберите опцию (1-4):"
-                )
-            else:
-                # Обработка выбора пользователя
-                if message == "1":
-                    response = "Введите имя пассажира:"
-                    self.state = RegistrationState.ASK_NAME
-                elif message == "2":
-                    if self.registrations:
-                        response = "Текущие регистрации:\n" + "\n".join(
-                            [f"{name}: Рейс {flight}" for name, flight in self.registrations.items()]
-                        )
-                    else:
-                        response = "Нет существующих регистраций."
-                    response += (
-                        "\n\nГлавное меню:\n"
-                        "1. Зарегистрироваться на рейс\n"
-                        "2. Просмотреть регистрации\n"
-                        "3. Отменить регистрацию\n"
-                        "4. Выйти\n"
-                        "Выберите опцию (1-4):"
-                    )
-                elif message == "3":
-                    response = "Введите имя пассажира для отмены регистрации:"
-                    self.state = RegistrationState.CANCEL_REGISTRATION_START
-                elif message == "4":
-                    response = "Завершение работы."
-                    self.state = RegistrationState.END
-                else:
-                    response = "Неверный ввод. Пожалуйста, выберите опцию от 1 до 4."
-            return response
-
-        elif self.state == RegistrationState.ASK_NAME:
-            self.current_name = message.strip()
-            if self.current_name:
-                response = f"Укажите номер рейса для пассажира {self.current_name}:"
-                self.state = RegistrationState.ASK_FLIGHT_NUMBER
-            else:
-                response = "Имя не может быть пустым. Пожалуйста, введите корректное имя пассажира:"
-            return response
-
-        elif self.state == RegistrationState.ASK_FLIGHT_NUMBER:
-            self.current_flight = message.strip()
-            if self.current_flight:
-                response = (
-                    f"Подтвердите регистрацию на рейс {self.current_flight} на имя пассажира {self.current_name}? (да/нет)"
-                )
-                self.state = RegistrationState.CONFIRMATION
-            else:
-                response = f"Номер рейса не может быть пустым. Укажите номер рейса для пассажира {self.current_name}:"
-            return response
-
-        elif self.state == RegistrationState.CONFIRMATION:
-            if message.lower() == "да":
-                self.registrations[self.current_name] = self.current_flight
-                response = (
-                    "Регистрация успешно завершена!\n\nГлавное меню:\n"
-                    "1. Зарегистрироваться на рейс\n"
-                    "2. Просмотреть регистрации\n"
-                    "3. Отменить регистрацию\n"
-                    "4. Выйти\n"
-                    "Выберите опцию (1-4):"
-                )
-                self.state = RegistrationState.MAIN_MENU
-            elif message.lower() == "нет":
-                response = (
-                    "Регистрация отменена.\n\nГлавное меню:\n"
-                    "1. Зарегистрироваться на рейс\n"
-                    "2. Просмотреть регистрации\n"
-                    "3. Отменить регистрацию\n"
-                    "4. Выйти\n"
-                    "Выберите опцию (1-4):"
-                )
-                self.state = RegistrationState.MAIN_MENU
-            else:
-                response = "Пожалуйста, ответьте 'да' или 'нет':"
-            return response
-
-        elif self.state == RegistrationState.CANCEL_REGISTRATION_START:
-            self.current_name = message.strip()
-            if self.current_name in self.registrations:
-                response = f"Вы уверены, что хотите отменить регистрацию для {self.current_name}? (да/нет)"
-                self.state = RegistrationState.CANCEL_CONFIRMATION
-            else:
-                response = (
-                    "Пассажир с таким именем не найден.\n\nГлавное меню:\n"
-                    "1. Зарегистрироваться на рейс\n"
-                    "2. Просмотреть регистрации\n"
-                    "3. Отменить регистрацию\n"
-                    "4. Выйти\n"
-                    "Выберите опцию (1-4):"
-                )
-                self.state = RegistrationState.MAIN_MENU
-            return response
-
-        elif self.state == RegistrationState.CANCEL_CONFIRMATION:
-            if message.lower() == "да":
-                del self.registrations[self.current_name]
-                response = (
-                    "Регистрация успешно отменена.\n\nГлавное меню:\n"
-                    "1. Зарегистрироваться на рейс\n"
-                    "2. Просмотреть регистрации\n"
-                    "3. Отменить регистрацию\n"
-                    "4. Выйти\n"
-                    "Выберите опцию (1-4):"
-                )
-                self.state = RegistrationState.MAIN_MENU
-            elif message.lower() == "нет":
-                response = (
-                    "Отмена не выполнена.\n\nГлавное меню:\n"
-                    "1. Зарегистрироваться на рейс\n"
-                    "2. Просмотреть регистрации\n"
-                    "3. Отменить регистрацию\n"
-                    "4. Выйти\n"
-                    "Выберите опцию (1-4):"
-                )
-                self.state = RegistrationState.MAIN_MENU
-            else:
-                response = "Пожалуйста, ответьте 'да' или 'нет':"
-            return response
-
-        elif self.state == RegistrationState.END:
-            return "Чат-бот завершил работу."
-
-        else:
-            self.state = RegistrationState.END
-            return "Неизвестное состояние. Завершение работы."
 
 def main():
-    """Запускает расширенный чат-бот в консоли"""
-
+    """Запускает чат-бота в консоли"""
     bot = RegistrationBot()
     print("Бот: ", bot.process_message(""))  # Инициализация и отображение главного меню
 
-    while bot.state != RegistrationState.END:
+    while not isinstance(bot.state, EndState):
         message = input("Вы: ")
-        print("Бот: ", bot.process_message(message))
+        response = bot.process_message(message)
+        print("Бот: ", response)
+
+    print("Бот завершил работу.")
+
 
 if __name__ == "__main__":
     main()
